@@ -18,6 +18,7 @@ use easypqp_cli::runner::Runner;
 /// * `allowed_fragment_types`: Optional list of allowed fragment types. Overrides the JSON field parameter.
 /// * `fine_tune`: Optional flag to enable fine-tuning. Overrides the JSON field parameter.
 /// * `train_data_path`: Optional path to training data. Overrides the JSON field parameter.
+/// * `save_model`: Optional flag to save the model. Overrides the JSON field parameter.
 /// * `batch_size`: Optional batch size for parallel processing. Overrides the JSON field parameter.
 /// 
 /// # Returns
@@ -37,6 +38,9 @@ fn generate_insilico_library(
     allowed_fragment_types: Option<Vec<String>>,
     fine_tune: Option<bool>,
     train_data_path: Option<String>,
+    save_model: Option<bool>,
+    instrument: Option<String>,
+    nce: Option<f32>,
     batch_size: Option<usize>,
 ) -> PyResult<()> {
     // Parse parameters from JSON string
@@ -54,6 +58,9 @@ fn generate_insilico_library(
         allowed_fragment_types,
         fine_tune,
         train_data_path,
+        save_model,
+        instrument,
+        nce,
         batch_size,
     )
     .map_err(|e| {

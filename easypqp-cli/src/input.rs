@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::Path};
 
 use anyhow::{ensure, Context, Result};
 use clap::ArgMatches;
@@ -308,10 +308,19 @@ impl Input {
         allowed_fragment_types: Option<Vec<String>>,
         fine_tune: Option<bool>,
         train_data_path: Option<String>,
+        save_model: Option<bool>,
+        instrument: Option<String>,
+        nce: Option<f32>,
         batch_size: Option<usize>,
     ) -> Result<Self> {
-        let mut input = Input::load(path)
-            .with_context(|| format!("Failed to read parameters from `{path}`"))?;
+        // Check if it's a path to an existing file
+        let mut input: Input = if Path::new(path).exists() {
+            Input::load(path)
+                .with_context(|| format!("Failed to read parameters from `{path}`"))?
+        } else {
+            serde_json::from_str(path)
+                .with_context(|| "Failed to parse JSON configuration from string")?
+        };
 
         // Handle JSON configuration overrides
         if let Some(fasta) = fasta {
@@ -349,6 +358,15 @@ impl Input {
         }
         if let Some(train_data_path) = train_data_path {
             input.dl_feature_generators.clone().unwrap().fine_tune_config.unwrap().train_data_path = train_data_path;
+        }
+        if let Some(save_model) = save_model {
+            input.dl_feature_generators.clone().unwrap().fine_tune_config.unwrap().save_model = save_model;
+        }
+        if let Some(instrument) = instrument {
+            input.dl_feature_generators.clone().unwrap().instrument = Some(instrument);
+        }
+        if let Some(nce) = nce {
+            input.dl_feature_generators.clone().unwrap().nce = Some(nce);
         }
         if let Some(batch_size) = batch_size {
             input.dl_feature_generators.clone().unwrap().fine_tune_config.unwrap().batch_size = batch_size;
