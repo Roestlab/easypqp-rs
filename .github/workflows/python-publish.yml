@@ -1,0 +1,39 @@
+name: Publish Python Package
+
+on:
+  release:
+    types: [published]  # Trigger only on actual published releases
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-publish:
+    name: Build and Publish easypqp_rs to PyPI
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Set up Rust (for maturin build)
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Build wheel with maturin
+        run: maturin build --release -m easypqp-py/pyproject.toml
+
+      - name: Publish to PyPI
+        env:
+          MATURIN_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: maturin publish --no-sdist -m easypqp-py/pyproject.toml -u __token__ -p $MATURIN_PASSWORD

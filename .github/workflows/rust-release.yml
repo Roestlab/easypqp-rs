@@ -1,0 +1,68 @@
+name: Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - v[0-9]+.*
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/create-gh-release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  upload-assets:
+    needs: create-release
+    strategy:
+      matrix:
+        include:
+          - name: easypqp-x86_64-unknown-linux-musl
+            bin: easypqp
+            target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+
+          - name: easypqp-x86_64-apple-darwin
+            bin: easypqp
+            target: x86_64-apple-darwin
+            os: macos-latest
+
+          - name: easypqp-x86_64-pc-windows-msvc
+            bin: easypqp.exe
+            target: x86_64-pc-windows-msvc
+            os: windows-latest
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install musl-tools (for Linux musl builds)
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get install -y musl-tools
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Build easypqp
+        run: cargo build --release --target=${{ matrix.target }} --package easypqp-cli
+
+      - name: Upload release binary
+        uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: ${{ matrix.bin }}
+          archive: ${{ matrix.name }}-${{ github.ref_name }}
+          target: ${{ matrix.target }}
+          include: LICENSE,README.md
+          tar: unix
+          zip: windows
+          token: ${{ secrets.GITHUB_TOKEN }}
+          rename: ${{ matrix.name }}
