@@ -1,8 +1,8 @@
 use std::fs::File;
-use std::io::Read;
-use std::path::Path;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use anyhow::Error;
-use std::path::PathBuf;
+use sysinfo::System;
 
 
 pub fn read_fasta<S>(
@@ -36,6 +36,27 @@ where
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
     Ok(serde_json::from_str(&contents)?)
+}
+
+
+
+pub fn write_bytes_to_file(path: &str, bytes: &[u8]) -> std::io::Result<()> {
+    let path = Path::new(path);
+    let mut file = File::create(path)?;
+    file.write_all(bytes)?;
+    Ok(())
+}
+
+
+pub fn auto_chunk_size(peptide_bytes_estimate: usize, safety_ratio: f64) -> usize {
+    let mut sys = System::new_all();
+    sys.refresh_memory();
+
+    let available_bytes = sys.free_memory() * 1024; 
+    let safe_bytes = (available_bytes as f64 * safety_ratio) as usize;
+
+    let chunk = safe_bytes / peptide_bytes_estimate;
+    chunk.clamp(1000, 10_000_000) // minimum of 1000 peptides per chunk
 }
 
 
