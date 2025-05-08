@@ -1,4 +1,5 @@
 use anyhow::Result;
+use chrono::Utc;
 use core::f32;
 use itertools::multiunzip;
 use rayon::iter::ParallelIterator;
@@ -24,8 +25,16 @@ use crate::{
     ProductProperties,
 };
 
+
+#[derive(Clone)]
+struct PeptideFeatures {
+    naked_sequence: String,
+    mod_string: String,
+    mod_sites: String,
+}
+
 pub struct PropertyPrediction<'db, 'params> {
-    pub peptides: &'db Vec<Peptide>,
+    pub peptides: &'db [Peptide],
     pub insilico_settings: &'params InsilicoPQPSettings,
     pub dl_models: DLModels,
     pub modifications: HashMap<(String, Option<char>), ModificationMap>,
@@ -36,12 +45,13 @@ pub struct PropertyPrediction<'db, 'params> {
 
 impl<'db, 'params> PropertyPrediction<'db, 'params> {
     pub fn new(
-        peptides: &'db Vec<Peptide>,
+        peptides: &'db [Peptide],
         insilico_settings: &'params InsilicoPQPSettings,
         dl_models: DLModels,
         modifications: HashMap<(String, Option<char>), ModificationMap>,
         batch_size: usize,
-    ) -> Self {
+    ) -> Self
+    {
         PropertyPrediction {
             peptides,
             insilico_settings,
@@ -57,12 +67,60 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
         let ccs_model = self.dl_models.ccs_model.as_ref().cloned();
         let ms2_model = self.dl_models.ms2_model.as_ref().cloned();
 
-        // Step 1: Parallelized peptide + charge expansion with progress
-        let total_peptides = self.peptides.len();
-        let progress = Progress::new(total_peptides, "Expanding peptides...");
+        // Step 1: Extract features once per peptide
+        let total_batches = self.peptides.len();
+        let timestamp = Utc::now().format("[%Y-%m-%dT%H:%M:%SZ INFO  easypqp_core::property_prediction]").to_string();
+        let description = format!("{} Preparing features...", timestamp);
+        let progress = Progress::new(total_batches, &description);
         let (send, recv) = crossbeam_channel::bounded(1024);
+        let progress_thread = std::thread::spawn(move || {
+            while recv.recv().is_ok() {
+                progress.inc();
+            }
+            progress.finish();
+        });
+        let peptide_features: Vec<PeptideFeatures> = self.peptides
+            .par_iter()
+            .map_init(
+                || send.clone(),
+                |sender, peptide| {
+                let peptide_string = peptide.to_string();
+                let _ = sender.send(());
+                PeptideFeatures {
+                    naked_sequence: remove_mass_shift(&peptide_string)
+                        .trim_start_matches('-')
+                        .to_string(),
+                    mod_string: get_modification_string(&peptide_string, &self.modifications),
+                    mod_sites: peptide
+                        .modifications
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, &v)| (v > 0.0).then(|| i.to_string()))
+                        .collect::<Vec<_>>()
+                        .join(";"),
+                }
+            })
+            .collect();
+        drop(send);
+        progress_thread.join().unwrap();
 
-        // Spawn thread for progress bar
+        // Step 2: Predict RT in batches
+        let batched_inputs: Vec<(Vec<String>, Vec<String>, Vec<String>)> = peptide_features
+            .chunks(self.batch_size)
+            .map(|chunk| {
+                (
+                    chunk.iter().map(|f| f.naked_sequence.clone()).collect(),
+                    chunk.iter().map(|f| f.mod_string.clone()).collect(),
+                    chunk.iter().map(|f| f.mod_sites.clone()).collect(),
+                )
+            })
+            .collect();
+
+        let total_batches = batched_inputs.len();
+        let timestamp = Utc::now().format("[%Y-%m-%dT%H:%M:%SZ INFO  easypqp_core::property_prediction]").to_string();
+        let description = format!("{} Predicting RT...", timestamp);
+        let progress = Progress::new(total_batches, &description);
+        let (send, recv) = crossbeam_channel::bounded(1024);
         let progress_thread = std::thread::spawn(move || {
             while recv.recv().is_ok() {
                 progress.inc();
@@ -70,36 +128,55 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
             progress.finish();
         });
 
-        let expanded: Vec<_> = self
-            .peptides
+        let rt_predictions: Arc<Vec<Option<f32>>> = Arc::new(
+            batched_inputs
+                .par_iter()
+                .map_init(
+                    || send.clone(),
+                    |sender, (seqs, mods, sites)| {
+                        let preds = rt_model
+                            .as_ref()
+                            .and_then(|m| m.predict(seqs, mods, sites).ok());
+                        let results = (0..seqs.len())
+                            .map(|i| preds.as_ref().map(|p| p.get_prediction_entry(i)[0]))
+                            .collect::<Vec<_>>();
+                        let _ = sender.send(());
+                        results
+                    },
+                )
+                .flatten()
+                .collect(),
+        );
+        drop(send);
+        progress_thread.join().unwrap();
+
+        // Step 3: Expand peptides by charge
+        let timestamp = Utc::now().format("[%Y-%m-%dT%H:%M:%SZ INFO  easypqp_core::property_prediction]").to_string();
+        let description = format!("{} Expanding features...", timestamp);
+        let progress = Progress::new(self.peptides.len(), &description);
+        let (send, recv) = crossbeam_channel::bounded(1024);
+        let progress_thread = std::thread::spawn(move || {
+            while recv.recv().is_ok() {
+                progress.inc();
+            }
+            progress.finish();
+        });
+
+        let expanded: Vec<_> = peptide_features
             .par_iter()
             .enumerate()
             .map_init(
                 || send.clone(),
-                |sender, (idx, peptide)| {
-                    let peptide_string = peptide.to_string();
-                    let naked_peptide = remove_mass_shift(&peptide_string)
-                        .trim_start_matches("-")
-                        .to_string();
-                    let mod_str = get_modification_string(&peptide_string, &self.modifications);
-                    let mod_site_str = peptide
-                        .modifications
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(i, &v)| if v > 0.0 { Some(i.to_string()) } else { None })
-                        .collect::<Vec<_>>()
-                        .join(";");
-
-                    let _ = sender.send(()); // update progress bar
-
+                |sender, (idx, f)| {
+                    let _ = sender.send(());
                     self.insilico_settings
                         .precursor_charge
                         .iter()
                         .map(move |&charge| {
                             (
-                                naked_peptide.clone(),
-                                mod_str.clone(),
-                                mod_site_str.clone(),
+                                f.naked_sequence.clone(),
+                                f.mod_string.clone(),
+                                f.mod_sites.clone(),
                                 charge as i32,
                                 (idx as u32, charge as u8),
                             )
@@ -109,11 +186,10 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
             )
             .flatten()
             .collect();
-
         drop(send);
         progress_thread.join().unwrap();
 
-        let (peptide_sequences, mods, mod_sites, charges, peptide_indices): (
+        let (seqs, mods, sites, charges, peptide_indices): (
             Vec<String>,
             Vec<String>,
             Vec<String>,
@@ -121,11 +197,33 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
             Vec<(u32, u8)>,
         ) = multiunzip(expanded);
 
-        // Step 2: Create chunks for prediction
-        let total_batches = (peptide_sequences.len() + self.batch_size - 1) / self.batch_size;
-        let progress = Progress::new(total_batches, "Predicting properties...");
-        let (send, recv) = crossbeam_channel::bounded(1024);
+        // Step 4: Predict CCS + MS2
+        let param = self
+            .dl_models
+            .params
+            .as_ref()
+            .expect("DL model parameters must be present")
+            .clone();
 
+        let batches: Vec<_> = (0..seqs.len())
+            .step_by(self.batch_size)
+            .map(|start| {
+                let end = (start + self.batch_size).min(seqs.len());
+                (
+                    seqs[start..end].to_vec(),
+                    mods[start..end].to_vec(),
+                    sites[start..end].to_vec(),
+                    charges[start..end].to_vec(),
+                    peptide_indices[start..end].to_vec(),
+                )
+            })
+            .collect();
+
+        let total_batches = batches.len();
+        let timestamp = Utc::now().format("[%Y-%m-%dT%H:%M:%SZ INFO  easypqp_core::property_prediction]").to_string();
+        let description = format!("{} Predicting CCS and MS2...", timestamp);
+        let progress = Progress::new(total_batches, &description);
+        let (send, recv) = crossbeam_channel::bounded(1024);
         let progress_thread = std::thread::spawn(move || {
             while recv.recv().is_ok() {
                 progress.inc();
@@ -133,77 +231,40 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
             progress.finish();
         });
 
-        let batches: Vec<_> = (0..peptide_sequences.len())
-            .step_by(self.batch_size)
-            .map(|start| {
-                let end = (start + self.batch_size).min(peptide_sequences.len());
-                (
-                    peptide_sequences[start..end].to_vec(),
-                    mods[start..end].to_vec(),
-                    mod_sites[start..end].to_vec(),
-                    charges[start..end].to_vec(),
-                    peptide_indices[start..end].to_vec(),
-                )
-            })
-            .collect();
-
-        let params = self
-            .dl_models
-            .params
-            .as_ref()
-            .expect("DL model parameters must be present")
-            .clone(); // clone once here
-
         let predictions: Vec<_> = batches
             .par_iter()
             .map_init(
-                || {
-                    send.clone()
-                },
-                |sender, (seqs, mods, sites, chgs, indices)| {
-                    let start_time = std::time::Instant::now();
-                    let rt_preds = rt_model
-                        .as_ref()
-                        .and_then(|m| m.predict(seqs, mods, sites).ok());
-                    log::debug!("RT prediction time: {:?}", start_time.elapsed());
-                    let start_time = std::time::Instant::now();
+                || (send.clone(), Arc::clone(&rt_predictions)),
+                |(sender, rt_preds), (seqs, mods, sites, chgs, indices)| {
                     let ccs_preds = ccs_model
                         .as_ref()
                         .and_then(|m| m.predict(seqs, mods, sites, chgs.clone()).ok());
-                    log::debug!("CCS prediction time: {:?}", start_time.elapsed());
-                    let start_time = std::time::Instant::now();
                     let ms2_preds = ms2_model.as_ref().and_then(|m| {
                         m.predict(
                             seqs,
                             mods,
                             sites,
                             chgs.clone(),
-                            vec![params.nce as i32; seqs.len()],
-                            vec![params.instrument.clone(); seqs.len()],
+                            vec![param.nce as i32; seqs.len()],
+                            vec![param.instrument.clone(); seqs.len()],
                         )
                         .ok()
                     });
-                    log::debug!("MS2 prediction time: {:?}", start_time.elapsed());
 
-                    let start_time = std::time::Instant::now();
-                    let mut result = Vec::new();
-                    for (i, (peptide_idx, charge)) in indices.iter().enumerate() {
-                        result.push((
-                            (*peptide_idx, *charge),
+                    let result: Vec<_> = indices
+                        .iter()
+                        .enumerate()
+                        .map(|(i, (peptide_idx, charge))| {
                             (
-                                rt_preds.as_ref().map(|v| v.get_prediction_entry(i)[0]),
-                                ccs_preds.as_ref().map(|v| v.get_prediction_entry(i)[0]),
-                                ms2_preds
-                                    .as_ref()
-                                    .map(|v| v.get_prediction_entry(i).clone()),
-                            ),
-                        ));
-                    }
-                    log::debug!(
-                        "Collecting prediction results time: {:?}",
-                        start_time.elapsed()
-                    );
-
+                                (*peptide_idx, *charge),
+                                (
+                                    rt_preds.get(*peptide_idx as usize).copied().flatten(),
+                                    ccs_preds.as_ref().map(|p| p.get_prediction_entry(i)[0]),
+                                    ms2_preds.as_ref().map(|p| p.get_prediction_entry(i).clone()),
+                                ),
+                            )
+                        })
+                        .collect();
                     let _ = sender.send(());
                     result
                 },
@@ -221,14 +282,16 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
             }
         }
 
-        // Step 3: Build assays from predictions
+        // Step 4: Build assays from predictions
         let preds_clone = {
             let preds = self.predictions.lock().unwrap();
             preds.clone()
         };
 
         let total_assays = preds_clone.len();
-        let progress = Progress::new(total_assays, "Creating PQP assays...");
+        let timestamp = Utc::now().format("[%Y-%m-%dT%H:%M:%SZ INFO  easypqp_core::property_prediction]").to_string();
+        let description = format!("{} Creating PQP assays...", timestamp);
+        let progress = Progress::new(total_assays, &description);
         let (send, recv) = crossbeam_channel::bounded(1024);
 
         let progress_thread = std::thread::spawn(move || {
