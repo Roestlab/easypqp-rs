@@ -4,7 +4,28 @@ use anyhow::{ensure, Context, Result};
 use clap::ArgMatches;
 use serde::{Deserialize, Serialize};
 use sage_core::{database::{Builder, EnzymeBuilder, Parameters}, modification::ModificationSpecificity};
-use easypqp_core::InsilicoPQPSettings;
+use easypqp_core::{util::auto_chunk_size, InsilicoPQPSettings};
+
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+pub struct ChunkingStrategy(pub usize);
+
+
+impl Default for ChunkingStrategy {
+    fn default() -> Self {
+        Self(0)
+    }
+}
+
+impl ChunkingStrategy {
+    pub fn resolve(self, batch_size: usize) -> usize {
+        if self.0 == 0 {
+            auto_chunk_size(1024 * batch_size, 0.5)
+        } else {
+            self.0
+        }
+    }
+}
 
 
 #[derive(Serialize, Clone)]
@@ -14,6 +35,7 @@ pub struct InsilicoPQP {
     pub database: Parameters,
     pub insilico_settings: InsilicoPQPSettings,
     pub dl_feature_generators: DLFeatureGeneratorSettings,
+    pub peptide_chunking: ChunkingStrategy,
     pub output_file: String,
 }
 
@@ -255,6 +277,7 @@ pub struct Input {
     pub database: Builder,
     pub insilico_settings: InsilicoPQPSettings,
     pub dl_feature_generators: Option<DLFeatureGenerators>,
+    pub peptide_chunking: ChunkingStrategy,
     pub output_file: Option<String>,
 }
 
@@ -391,6 +414,7 @@ impl Input {
                 .dl_feature_generators
                 .map(Into::into)
                 .unwrap_or_default(),
+            peptide_chunking: self.peptide_chunking.clone(),
             output_file: self
                 .output_file
                 .clone()
@@ -424,6 +448,7 @@ pub struct InsilicoPQPDto<'a> {
     pub database: SageParametersDto<'a>,
     pub insilico_settings: &'a InsilicoPQPSettings,
     pub dl_feature_generators: &'a DLFeatureGeneratorSettings,
+    pub peptide_chunking: ChunkingStrategy,
     pub output_file: &'a String,
 }
 
@@ -445,6 +470,7 @@ impl InsilicoPQP {
             },
             insilico_settings: &self.insilico_settings,
             dl_feature_generators: &self.dl_feature_generators,
+            peptide_chunking: self.peptide_chunking.clone(),
             output_file: &self.output_file,
         }
     }
