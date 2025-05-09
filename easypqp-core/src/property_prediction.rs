@@ -9,7 +9,7 @@ use redeem_properties::utils::logging::Progress;
 use redeem_properties::{
     models::model_interface::DLModels,
     utils::peptdeep_utils::{
-        ccs_to_mobility_bruker, get_modification_string, remove_mass_shift, ModificationMap,
+        ccs_to_mobility_bruker, ModificationMap,
     },
 };
 use rustyms::fragment::FragmentKind;
@@ -18,7 +18,7 @@ use rustyms::system::usize::Charge;
 use rustyms::FragmentationModel;
 use sage_core::peptide::Peptide;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::{
     is_allowed_fragment, select_model, InsilicoPQPSettings, PeptideProperties, PrecursorProperties,
@@ -26,52 +26,121 @@ use crate::{
 };
 
 
+/// A simplified feature representation of a peptide used for model input.
+///
+/// Contains the stripped amino acid sequence (`naked_sequence`), a
+/// stringified representation of modifications (`mod_string`), and a
+/// semicolon-separated list of modification site indices (`mod_sites`).
 #[derive(Clone)]
-struct PeptideFeatures {
-    naked_sequence: String,
-    mod_string: String,
-    mod_sites: String,
+pub struct PeptideFeatures {
+    /// Amino acid sequence with mass shifts removed (e.g., "ACDEFGHIK").
+    pub naked_sequence: String,
+
+    /// Modification string formatted for input into deep learning models (e.g., "Oxidation@M").
+    pub mod_string: String,
+
+    /// Semicolon-separated modification site indices (e.g., "3;6").
+    pub mod_sites: String,
 }
 
+
+/// Holds configuration and data required for peptide property prediction.
+///
+/// This struct encapsulates all components necessary to predict
+/// retention time (RT), collisional cross-section (CCS), and MS2 fragment
+/// intensities using deep learning models for a given list of peptides.
 pub struct PropertyPrediction<'db, 'params> {
+    /// Slice of peptides to predict properties for.
     pub peptides: &'db [Peptide],
+
+    /// Settings that control prediction and fragmentation behavior.
     pub insilico_settings: &'params InsilicoPQPSettings,
+
+    /// Pre-loaded deep learning models for RT, CCS, and MS2 prediction.
     pub dl_models: DLModels,
+
+    /// Mapping of modification identifiers used to convert peptide mods to model-compatible strings.
     pub modifications: HashMap<(String, Option<char>), ModificationMap>,
+
+    /// Number of peptide inputs to include per model batch.
     pub batch_size: usize,
-    pub predictions:
-        Arc<Mutex<HashMap<(u32, u8), (Option<f32>, Option<f32>, Option<PredictionValue>)>>>,
 }
+
 
 impl<'db, 'params> PropertyPrediction<'db, 'params> {
+    /// Constructs a new `PropertyPrediction` instance for predicting peptide properties.
+    ///
+    /// # Arguments
+    /// * `peptides` - A slice of peptide structures to process.
+    /// * `insilico_settings` - Configuration parameters for fragmentation and prediction.
+    /// * `dl_models` - Loaded prediction models for RT, CCS, and MS2.
+    /// * `modifications` - Map of modification names and sites to use in feature encoding.
+    /// * `batch_size` - Number of inputs per prediction batch.
+    ///
+    /// # Returns
+    /// A new `PropertyPrediction` instance with all fields initialized.
     pub fn new(
         peptides: &'db [Peptide],
         insilico_settings: &'params InsilicoPQPSettings,
         dl_models: DLModels,
         modifications: HashMap<(String, Option<char>), ModificationMap>,
         batch_size: usize,
-    ) -> Self
-    {
+    ) -> Self {
         PropertyPrediction {
             peptides,
             insilico_settings,
             dl_models,
             modifications,
             batch_size,
-            predictions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
+    /// Predicts peptide properties (RT, CCS, MS2) and builds PQP assays.
+    ///
+    /// This is the main entry point for generating predicted peptide assays.
+    /// It performs the following steps:
+    /// 1. Extracts sequence and modification features from peptides.
+    /// 2. Predicts retention times (RT) in batches.
+    /// 3. Expands peptides across precursor charge states.
+    /// 4. Predicts CCS and MS2 intensities in batches.
+    /// 5. Builds assays from the combined predictions.
+    ///
+    /// Returns a vector of `PeptideProperties` ready for export.
     pub fn predict_properties(&mut self) -> Result<Vec<PeptideProperties>> {
-        let rt_model = self.dl_models.rt_model.as_ref().cloned();
-        let ccs_model = self.dl_models.ccs_model.as_ref().cloned();
-        let ms2_model = self.dl_models.ms2_model.as_ref().cloned();
-
         // Step 1: Extract features once per peptide
-        let total_batches = self.peptides.len();
-        let timestamp = Utc::now().format("[%Y-%m-%dT%H:%M:%SZ INFO  easypqp_core::property_prediction]").to_string();
+        let peptide_features = self.extract_peptide_features();
+
+        // Step 2: Predict RT in batches
+        let rt_predictions = self.predict_rt(&peptide_features);
+
+        // Step 3: Expand peptides by charge
+        let expanded = self.expand_peptides_by_charge(&peptide_features);
+
+        // Step 4: Predict CCS + MS2
+        let predictions = self.predict_ccs_and_ms2(expanded, rt_predictions);
+
+        // Step 4: Build assays from predictions
+        let assays = self.build_assays(&predictions)?;
+
+        Ok(assays)
+    }
+
+    /// Extracts RT-relevant features from each peptide sequence using fast u8-based access.
+    ///
+    /// This version avoids expensive string conversions by operating directly on
+    /// the `Peptide` struct's internal representation (`sequence` and `modifications`).
+    ///
+    /// Returns a vector of `PeptideFeatures` containing:
+    /// - the naked amino acid sequence,
+    /// - a model-compatible modification string,
+    /// - and a semicolon-delimited list of modified site indices.
+    fn extract_peptide_features(&self) -> Vec<PeptideFeatures> {
+        let total_peptides = self.peptides.len();
+        let timestamp = Utc::now()
+            .format("[%Y-%m-%dT%H:%M:%SZ INFO  easypqp_core::property_prediction]")
+            .to_string();
         let description = format!("{} Preparing features...", timestamp);
-        let progress = Progress::new(total_batches, &description);
+        let progress = Progress::new(total_peptides, &description);
         let (send, recv) = crossbeam_channel::bounded(1024);
         let progress_thread = std::thread::spawn(move || {
             while recv.recv().is_ok() {
@@ -79,32 +148,32 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
             }
             progress.finish();
         });
-        let peptide_features: Vec<PeptideFeatures> = self.peptides
+
+        let features: Vec<PeptideFeatures> = self
+            .peptides
             .par_iter()
             .map_init(
                 || send.clone(),
                 |sender, peptide| {
-                let peptide_string = peptide.to_string();
-                let _ = sender.send(());
-                PeptideFeatures {
-                    naked_sequence: remove_mass_shift(&peptide_string)
-                        .trim_start_matches('-')
-                        .to_string(),
-                    mod_string: get_modification_string(&peptide_string, &self.modifications),
-                    mod_sites: peptide
-                        .modifications
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(i, &v)| (v > 0.0).then(|| i.to_string()))
-                        .collect::<Vec<_>>()
-                        .join(";"),
-                }
-            })
+                    let _ = sender.send(());
+                    peptide_feature_from(peptide, &self.modifications)
+                },
+            )
             .collect();
+
         drop(send);
         progress_thread.join().unwrap();
+        features
+    }
 
-        // Step 2: Predict RT in batches
+    /// Predicts retention time (RT) in batches using the RT model.
+    ///
+    /// Accepts a slice of `PeptideFeatures` and performs batch inference using
+    /// the configured RT model. Progress is logged with timestamps.
+    ///
+    /// Returns a shared vector (`Arc<Vec<...>>`) of optional RT predictions,
+    /// indexed by peptide.
+    fn predict_rt(&self, peptide_features: &[PeptideFeatures]) -> Arc<Vec<Option<f32>>> {
         let batched_inputs: Vec<(Vec<String>, Vec<String>, Vec<String>)> = peptide_features
             .chunks(self.batch_size)
             .map(|chunk| {
@@ -117,7 +186,9 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
             .collect();
 
         let total_batches = batched_inputs.len();
-        let timestamp = Utc::now().format("[%Y-%m-%dT%H:%M:%SZ INFO  easypqp_core::property_prediction]").to_string();
+        let timestamp = Utc::now()
+            .format("[%Y-%m-%dT%H:%M:%SZ INFO  easypqp_core::property_prediction]")
+            .to_string();
         let description = format!("{} Predicting RT...", timestamp);
         let progress = Progress::new(total_batches, &description);
         let (send, recv) = crossbeam_channel::bounded(1024);
@@ -127,6 +198,8 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
             }
             progress.finish();
         });
+
+        let rt_model = self.dl_models.rt_model.as_ref().cloned();
 
         let rt_predictions: Arc<Vec<Option<f32>>> = Arc::new(
             batched_inputs
@@ -149,9 +222,23 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
         );
         drop(send);
         progress_thread.join().unwrap();
+        rt_predictions
+    }
 
-        // Step 3: Expand peptides by charge
-        let timestamp = Utc::now().format("[%Y-%m-%dT%H:%M:%SZ INFO  easypqp_core::property_prediction]").to_string();
+    /// Expands each peptide to all specified precursor charge states.
+    ///
+    /// For each peptide feature, it generates a new entry for each charge
+    /// defined in `insilico_settings.precursor_charge`.
+    ///
+    /// Returns a flattened vector of tuples containing sequence info, charge,
+    /// and the (peptide_index, charge) key used to link back predictions.
+    fn expand_peptides_by_charge(
+        &self,
+        peptide_features: &[PeptideFeatures],
+    ) -> Vec<(String, String, String, i32, (u32, u8))> {
+        let timestamp = Utc::now()
+            .format("[%Y-%m-%dT%H:%M:%SZ INFO  easypqp_core::property_prediction]")
+            .to_string();
         let description = format!("{} Expanding features...", timestamp);
         let progress = Progress::new(self.peptides.len(), &description);
         let (send, recv) = crossbeam_channel::bounded(1024);
@@ -188,7 +275,24 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
             .collect();
         drop(send);
         progress_thread.join().unwrap();
+        expanded
+    }
 
+    /// Predicts CCS and MS2 intensities in batches for expanded peptide-charge pairs.
+    ///
+    /// Performs batched inference using the CCS and MS2 models.
+    /// RT values are retrieved using the original peptide indices.
+    ///
+    /// Returns a vector of predictions keyed by (peptide_index, charge).
+    /// Each value is a tuple of optional RT, CCS, and MS2 predictions.
+    fn predict_ccs_and_ms2(
+        &self,
+        expanded: Vec<(String, String, String, i32, (u32, u8))>,
+        rt_predictions: Arc<Vec<Option<f32>>>,
+    ) -> Vec<(
+        (u32, u8),
+        (Option<f32>, Option<f32>, Option<PredictionValue>),
+    )> {
         let (seqs, mods, sites, charges, peptide_indices): (
             Vec<String>,
             Vec<String>,
@@ -197,7 +301,6 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
             Vec<(u32, u8)>,
         ) = multiunzip(expanded);
 
-        // Step 4: Predict CCS + MS2
         let param = self
             .dl_models
             .params
@@ -220,7 +323,9 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
             .collect();
 
         let total_batches = batches.len();
-        let timestamp = Utc::now().format("[%Y-%m-%dT%H:%M:%SZ INFO  easypqp_core::property_prediction]").to_string();
+        let timestamp = Utc::now()
+            .format("[%Y-%m-%dT%H:%M:%SZ INFO  easypqp_core::property_prediction]")
+            .to_string();
         let description = format!("{} Predicting CCS and MS2...", timestamp);
         let progress = Progress::new(total_batches, &description);
         let (send, recv) = crossbeam_channel::bounded(1024);
@@ -230,6 +335,9 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
             }
             progress.finish();
         });
+
+        let ccs_model = self.dl_models.ccs_model.as_ref().cloned();
+        let ms2_model = self.dl_models.ms2_model.as_ref().cloned();
 
         let predictions: Vec<_> = batches
             .par_iter()
@@ -260,7 +368,9 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
                                 (
                                     rt_preds.get(*peptide_idx as usize).copied().flatten(),
                                     ccs_preds.as_ref().map(|p| p.get_prediction_entry(i)[0]),
-                                    ms2_preds.as_ref().map(|p| p.get_prediction_entry(i).clone()),
+                                    ms2_preds
+                                        .as_ref()
+                                        .map(|p| p.get_prediction_entry(i).clone()),
                                 ),
                             )
                         })
@@ -274,22 +384,27 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
 
         drop(send);
         progress_thread.join().unwrap();
+        predictions
+    }
 
-        {
-            let mut final_predictions = self.predictions.lock().unwrap();
-            for (key, value) in predictions {
-                final_predictions.insert(key, value);
-            }
-        }
-
-        // Step 4: Build assays from predictions
-        let preds_clone = {
-            let preds = self.predictions.lock().unwrap();
-            preds.clone()
-        };
-
-        let total_assays = preds_clone.len();
-        let timestamp = Utc::now().format("[%Y-%m-%dT%H:%M:%SZ INFO  easypqp_core::property_prediction]").to_string();
+    /// Constructs PQP assays from the full set of predicted properties.
+    ///
+    /// For each (peptide_index, charge) entry, it reconstructs theoretical
+    /// fragments and associates MS2 intensities based on model outputs.
+    /// Only allowed fragment types are used.
+    ///
+    /// Returns a vector of `PeptideProperties` representing the final assay library.
+    fn build_assays(
+        &self,
+        predictions: &Vec<(
+            (u32, u8),
+            (Option<f32>, Option<f32>, Option<PredictionValue>),
+        )>,
+    ) -> Result<Vec<PeptideProperties>> {
+        let total_assays = predictions.len();
+        let timestamp = Utc::now()
+            .format("[%Y-%m-%dT%H:%M:%SZ INFO  easypqp_core::property_prediction]")
+            .to_string();
         let description = format!("{} Creating PQP assays...", timestamp);
         let progress = Progress::new(total_assays, &description);
         let (send, recv) = crossbeam_channel::bounded(1024);
@@ -306,7 +421,7 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
             FragmentationModel::cid_hcd(),
         );
 
-        let assays: Vec<_> = preds_clone
+        let assays: Vec<_> = predictions
             .par_iter()
             .map_init(
                 || (model, send.clone()),
@@ -403,7 +518,75 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
 
         drop(send);
         progress_thread.join().unwrap();
-
         Ok(assays)
+    }
+}
+
+
+/// Constructs `PeptideFeatures` for a single peptide by extracting:
+/// - the unmodified sequence as a `String`,
+/// - the modification string (e.g., "Carbamidomethyl@C"),
+/// - and a semicolon-separated list of modified site indices.
+///
+/// # Example
+/// ```rust
+/// use std::sync::Arc;
+/// use std::collections::HashMap;
+/// use sage_core::peptide::Peptide;
+/// use sage_core::enzyme::Position;
+/// use redeem_properties::utils::peptdeep_utils::{load_modifications, ModificationMap};
+/// use easypqp_core::property_prediction::peptide_feature_from;
+/// let peptide = Peptide {
+///     decoy: false,
+///     sequence: Arc::from(b"ACDEFGHIK".to_vec().into_boxed_slice()),
+///     modifications: vec![0.0, 57.02146, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+///     nterm: None,
+///     cterm: None,
+///     monoisotopic: 0.0,
+///     missed_cleavages: 0,
+///     semi_enzymatic: false,
+///     position: Position::Internal,
+///     proteins: vec![Arc::from("P12345")],
+/// };
+/// let mod_map = load_modifications().unwrap();
+/// let features = peptide_feature_from(&peptide, &mod_map);
+/// assert_eq!(features.naked_sequence, "ACDEFGHIK");
+/// assert_eq!(features.mod_string, "Carbamidomethyl@C");
+/// assert_eq!(features.mod_sites, "1");
+/// ```
+pub fn peptide_feature_from(
+    peptide: &Peptide,
+    mod_map: &HashMap<(String, Option<char>), ModificationMap>,
+) -> PeptideFeatures {
+    let naked_sequence: String = peptide.sequence.iter().map(|&b| b as char).collect();
+
+    let mod_string = peptide
+        .sequence
+        .iter()
+        .zip(peptide.modifications.iter())
+        .enumerate()
+        .filter_map(|(_, (&aa, &mass))| {
+            if mass != 0.0 {
+                let key = (format!("{:.4}", mass), Some(aa as char));
+                mod_map.get(&key).map(|m| m.name.clone())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(";");
+
+    let mod_sites = peptide
+        .modifications
+        .iter()
+        .enumerate()
+        .filter_map(|(i, &mass)| (mass > 0.0).then(|| i.to_string()))
+        .collect::<Vec<_>>()
+        .join(";");
+
+    PeptideFeatures {
+        naked_sequence,
+        mod_string,
+        mod_sites,
     }
 }
