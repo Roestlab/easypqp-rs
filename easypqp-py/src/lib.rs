@@ -43,6 +43,11 @@ fn generate_insilico_library(
     nce: Option<f32>,
     batch_size: Option<usize>,
 ) -> PyResult<()> {
+    let _ = env_logger::Builder::default()
+        .filter_level(log::LevelFilter::Error)
+        .parse_env(env_logger::Env::default().filter_or("EASYPQP_LOG", "error,easypqp=info"))
+        .try_init();
+
     // Parse parameters from JSON string
     let params: Input = Input::from_passed_arguments(
         &parameters,
