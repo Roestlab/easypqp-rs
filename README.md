@@ -2,6 +2,8 @@
 
 ---
 
+[![Rust](https://github.com/singjc/easypqp-rs/actions/workflows/rust.yml/badge.svg?branch=master)](https://github.com/singjc/easypqp-rs/actions/workflows/rust.yml)
+
 easypqp-rs is a Rust library for in-silico peptide library generation, with  Python bindings for integration with the python [EasyPQP](https://github.com/grosenberger/easypqp) library.
 
 ## Features
