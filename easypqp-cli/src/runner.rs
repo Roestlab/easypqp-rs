@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use easypqp_core::util::auto_chunk_size;
 use log::{info, warn};
 use sage_core::peptide::Peptide;
 use std::{path::Path, time::Instant};
@@ -18,7 +17,6 @@ use easypqp_core::{
     util::write_bytes_to_file, PeptideProperties,
 };
 
-use crate::input::ChunkingStrategy;
 use crate::{input::InsilicoPQP, output::write_assays_to_tsv};
 
 struct PropertyPredictionScores<'a> {
