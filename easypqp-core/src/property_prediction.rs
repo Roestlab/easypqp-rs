@@ -174,13 +174,22 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
     /// Returns a shared vector (`Arc<Vec<...>>`) of optional RT predictions,
     /// indexed by peptide.
     fn predict_rt(&self, peptide_features: &[PeptideFeatures]) -> Arc<Vec<Option<f32>>> {
-        let batched_inputs: Vec<(Vec<String>, Vec<String>, Vec<String>)> = peptide_features
+        let batched_inputs: Vec<(Vec<Arc<[u8]>>, Vec<Arc<[u8]>>, Vec<Arc<[u8]>>)> = peptide_features
             .chunks(self.batch_size)
             .map(|chunk| {
                 (
-                    chunk.iter().map(|f| f.naked_sequence.clone()).collect(),
-                    chunk.iter().map(|f| f.mod_string.clone()).collect(),
-                    chunk.iter().map(|f| f.mod_sites.clone()).collect(),
+                    chunk
+                        .iter()
+                        .map(|f| Arc::from(f.naked_sequence.as_bytes().to_vec().into_boxed_slice()))
+                        .collect(),
+                    chunk
+                        .iter()
+                        .map(|f| Arc::from(f.mod_string.as_bytes().to_vec().into_boxed_slice()))
+                        .collect(),
+                    chunk
+                        .iter()
+                        .map(|f| Arc::from(f.mod_sites.as_bytes().to_vec().into_boxed_slice()))
+                        .collect(),
                 )
             })
             .collect();
@@ -207,9 +216,9 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
                 .map_init(
                     || send.clone(),
                     |sender, (seqs, mods, sites)| {
-                        let preds = rt_model
-                            .as_ref()
-                            .and_then(|m| m.predict(seqs, mods, sites).ok());
+                            let preds = rt_model
+                                .as_ref()
+                                .and_then(|m| m.predict(seqs.as_slice(), mods.as_slice(), sites.as_slice()).ok());
                         let results = (0..seqs.len())
                             .map(|i| preds.as_ref().map(|p| p.get_prediction_entry(i)[0]))
                             .collect::<Vec<_>>();
@@ -344,17 +353,40 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
             .map_init(
                 || (send.clone(), Arc::clone(&rt_predictions)),
                 |(sender, rt_preds), (seqs, mods, sites, chgs, indices)| {
-                    let ccs_preds = ccs_model
-                        .as_ref()
-                        .and_then(|m| m.predict(seqs, mods, sites, chgs.clone()).ok());
+                    // Convert string inputs to Arc<[u8]> for redeem API
+                    let seqs_arc: Vec<Arc<[u8]>> = seqs
+                        .iter()
+                        .map(|s| Arc::from(s.as_bytes().to_vec().into_boxed_slice()))
+                        .collect();
+                    let mods_arc: Vec<Arc<[u8]>> = mods
+                        .iter()
+                        .map(|s| Arc::from(s.as_bytes().to_vec().into_boxed_slice()))
+                        .collect();
+                    let sites_arc: Vec<Arc<[u8]>> = sites
+                        .iter()
+                        .map(|s| Arc::from(s.as_bytes().to_vec().into_boxed_slice()))
+                        .collect();
+
+                    let ccs_preds = ccs_model.as_ref().and_then(|m| {
+                        m.predict(
+                            seqs_arc.as_slice(),
+                            mods_arc.as_slice(),
+                            sites_arc.as_slice(),
+                            chgs.clone(),
+                        )
+                        .ok()
+                    });
+
+                    let instrument_arc: Arc<[u8]> = Arc::from(param.instrument.as_bytes().to_vec().into_boxed_slice());
+
                     let ms2_preds = ms2_model.as_ref().and_then(|m| {
                         m.predict(
-                            seqs,
-                            mods,
-                            sites,
+                            seqs_arc.as_slice(),
+                            mods_arc.as_slice(),
+                            sites_arc.as_slice(),
                             chgs.clone(),
-                            vec![param.nce as i32; seqs.len()],
-                            vec![param.instrument.clone(); seqs.len()],
+                            vec![param.nce as i32; seqs_arc.len()],
+                            vec![Some(instrument_arc.clone()); seqs_arc.len()],
                         )
                         .ok()
                     });

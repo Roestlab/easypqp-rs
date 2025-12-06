@@ -131,7 +131,7 @@ pub fn read_peptide_data_from_tsv<P: AsRef<Path>>(
             Ok(c) => c,
             Err(_) => continue,
         };
-        let precursor_mz = get_field("precursor_mz")?.parse().unwrap_or(0.0);
+        let precursor_mz = get_field("precursor_mz")?.parse::<f32>().unwrap_or(0.0_f32);
         let fragment_type = get_field("fragment_type")?;
         let series_number = get_field("fragment_series_number")?.parse().unwrap_or(0);
         let product_charge = column_indices.get("product_charge")
@@ -150,8 +150,12 @@ pub fn read_peptide_data_from_tsv<P: AsRef<Path>>(
                 50.0 // fallback for zero range
             }
         });
-        let ion_mobility = column_indices.get("ion_mobility").and_then(|&idx| fields.get(idx).and_then(|s| s.parse().ok()));
-        let ccs = ion_mobility_to_ccs_bruker(ion_mobility.unwrap_or(0.0), charge, precursor_mz);
+    let ion_mobility = column_indices.get("ion_mobility").and_then(|&idx| fields.get(idx).and_then(|s| s.parse::<f32>().ok()));
+        let ccs = ion_mobility_to_ccs_bruker(
+            ion_mobility.unwrap_or(0.0_f32) as f64,
+            charge,
+            precursor_mz as f64,
+        );
 
         // Create unique key combining sequence and charge
         let peptide_key = (sequence.clone(), charge);
@@ -164,13 +168,18 @@ pub fn read_peptide_data_from_tsv<P: AsRef<Path>>(
             
             // Initialize with empty intensity matrix
             PeptideData::new(
-                &sequence,
-                Some(charge),
-                Some(nce),
-                Some(instrument),
-                normalized_rt,
-                Some(ccs),
-                Some(vec![vec![0.0; 8]; peptide_len - 1]), // Same format as experimental_to_predicted_format
+                &sequence,            // modified_sequence
+                &naked_seq,           // naked_sequence
+                "",                 // mods (unknown here)
+                "",                 // mod_sites (unknown here)
+                Some(charge),        // charge
+                Some(precursor_mz),  // precursor_mass
+                Some(nce),           // nce
+                Some(instrument),    // instrument
+                normalized_rt,       // retention_time
+                ion_mobility,        // ion_mobility
+                Some(ccs),           // ccs
+                Some(vec![vec![0.0; 8]; peptide_len - 1]), // ms2_intensities
             )
         });
 
