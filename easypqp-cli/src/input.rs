@@ -37,6 +37,7 @@ pub struct InsilicoPQP {
     pub dl_feature_generators: DLFeatureGeneratorSettings,
     pub peptide_chunking: ChunkingStrategy,
     pub output_file: String,
+    pub write_report: bool,
 }
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
@@ -279,6 +280,7 @@ pub struct Input {
     pub dl_feature_generators: Option<DLFeatureGenerators>,
     pub peptide_chunking: ChunkingStrategy,
     pub output_file: Option<String>,
+    pub write_report: Option<bool>,
 }
 
 impl Input {
@@ -298,6 +300,11 @@ impl Input {
         // Handle JSON configuration overrides
         if let Some(output_file) = matches.get_one::<String>("output_file") {
             input.output_file = Some(output_file.into());
+        }
+
+        // CLI flag to enable writing HTML report
+        if matches.get_flag("write-report") {
+            input.write_report = Some(true);
         }
 
         // avoid to later panic if these parameters are not set (but doesn't check if files exist)
@@ -419,6 +426,7 @@ impl Input {
                 .output_file
                 .clone()
                 .unwrap_or_else(|| "insilico_library.tsv".into()),
+            write_report: self.write_report.unwrap_or(false),
         })
     }
 }
@@ -450,6 +458,7 @@ pub struct InsilicoPQPDto<'a> {
     pub dl_feature_generators: &'a DLFeatureGeneratorSettings,
     pub peptide_chunking: ChunkingStrategy,
     pub output_file: &'a String,
+    pub write_report: bool,
 }
 
 // 3. Implement conversion methods
@@ -472,6 +481,7 @@ impl InsilicoPQP {
             dl_feature_generators: &self.dl_feature_generators,
             peptide_chunking: self.peptide_chunking.clone(),
             output_file: &self.output_file,
+            write_report: self.write_report,
         }
     }
 }

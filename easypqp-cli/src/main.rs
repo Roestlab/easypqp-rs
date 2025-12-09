@@ -45,6 +45,12 @@ fn main() -> anyhow::Result<()> {
                 )
                 .value_hint(ValueHint::FilePath),
         )
+    .arg(
+        Arg::new("write-report")
+        .long("write-report")
+        .help("Write an HTML report summarizing the generated predicted library.")
+        .action(clap::ArgAction::SetTrue),
+    )
         .help_template(
             "{usage-heading} {usage}\n\n\
              {about-with-newline}\n\

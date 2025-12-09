@@ -456,13 +456,14 @@ impl Runner {
             )?;
         }
 
-        // After generating the TSV, also generate an HTML report next to it.
-        let report_path = format!("{}.html", self.parameters.output_file.trim_end_matches('.').trim_end_matches(".tsv"));
-        match crate::output::generate_html_report(&self.parameters.output_file, &report_path) {
-            Ok(_) => info!("Generated HTML report: {}", report_path),
-            Err(e) => warn!("Failed to generate HTML report: {}", e),
-        }
-        
+        // After generating the TSV, optionally generate an HTML report.
+        if self.parameters.write_report {
+            let report_path = format!("{}.html", self.parameters.output_file.trim_end_matches('.').trim_end_matches(".tsv"));
+            match crate::output::generate_html_report(&self.parameters.output_file, &report_path) {
+                Ok(_) => info!("Generated HTML report: {}", report_path),
+                Err(e) => warn!("Failed to generate HTML report: {}", e),
+            }
+        }         
     
         let execution_time = Instant::now() - start_time;
         log::info!(
