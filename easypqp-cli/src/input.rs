@@ -302,9 +302,9 @@ impl Input {
             input.output_file = Some(output_file.into());
         }
 
-        // CLI flag to enable writing HTML report
-        if matches.get_flag("write-report") {
-            input.write_report = Some(true);
+        // CLI flag to disable writing HTML report (default is to write)
+        if matches.get_flag("no-write-report") {
+            input.write_report = Some(false);
         }
 
         // avoid to later panic if these parameters are not set (but doesn't check if files exist)
@@ -426,7 +426,7 @@ impl Input {
                 .output_file
                 .clone()
                 .unwrap_or_else(|| "insilico_library.tsv".into()),
-            write_report: self.write_report.unwrap_or(false),
+            write_report: self.write_report.unwrap_or(true),
         })
     }
 }
