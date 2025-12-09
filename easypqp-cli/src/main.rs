@@ -45,19 +45,18 @@ fn main() -> anyhow::Result<()> {
                 )
                 .value_hint(ValueHint::FilePath),
         )
-            .arg(
-                Arg::new("parquet")
-                    .long("parquet")
-                    .value_parser(clap::builder::NonEmptyStringValueParser::new())
-                    .help("Path to Parquet output file. If set, a Parquet file will be produced from the generated TSV.")
-                    .value_hint(ValueHint::FilePath),
-            )
-            .arg(
-                Arg::new("no-write-report")
-                    .long("no-write-report")
-                    .help("Disable writing an HTML report that summarizes the generated predicted library.")
-                    .action(clap::ArgAction::SetTrue),
-            )
+        .arg(
+            Arg::new("parquet")
+                .long("parquet")
+                .help("Write output in Parquet format instead of TSV. The output file will use .parquet extension.")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("no-write-report")
+                .long("no-write-report")
+                .help("Disable writing an HTML report that summarizes the generated predicted library.")
+                .action(clap::ArgAction::SetTrue),
+        )
         .help_template(
             "{usage-heading} {usage}\n\n\
              {about-with-newline}\n\

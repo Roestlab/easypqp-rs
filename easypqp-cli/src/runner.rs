@@ -436,9 +436,20 @@ impl Runner {
     
         let start_time = Instant::now();
         
+        // Determine output paths based on parquet flag
+        let (output_path, parquet_path) = if self.parameters.parquet_output {
+            // When parquet is enabled, derive .parquet filename from output_file
+            let base = self.parameters.output_file.trim_end_matches(".tsv");
+            let parquet_file = format!("{}.parquet", base);
+            (None, Some(parquet_file))
+        } else {
+            // TSV output
+            (Some(self.parameters.output_file.clone()), None)
+        };
+        
         // Prepare optional streaming parquet writer (created only when feature enabled).
         #[cfg(feature = "parquet")]
-        let mut parquet_writer = if let Some(ref p) = self.parameters.parquet_output {
+        let mut parquet_writer = if let Some(ref p) = parquet_path {
             // instantiate parquet writer
             Some(crate::output::ParquetChunkWriter::try_new(p)?)
         } else {
@@ -461,7 +472,7 @@ impl Runner {
             let mut predictor = PropertyPredictionScores::new(&self.parameters, peptide_chunk);
             let assays = predictor.predict_properties()?;
 
-            if self.parameters.parquet_output.is_some() {
+            if parquet_path.is_some() {
                 #[cfg(feature = "parquet")]
                 {
                     if let Some(ref mut w) = parquet_writer {
@@ -480,7 +491,7 @@ impl Runner {
                 write_assays_to_tsv(
                     &assays,
                     peptide_chunk, // use the chunk peptides, not full self.peptides
-                    &self.parameters.output_file,
+                    output_path.as_ref().unwrap(),
                     &self.parameters.insilico_settings,
                 )?;
             }
@@ -495,14 +506,14 @@ impl Runner {
         // Generate HTML report: if Parquet output was requested, generate report from
         // the Parquet file; otherwise use the TSV-based generator on the output TSV.
         if self.parameters.write_report {
-            if let Some(ref p) = self.parameters.parquet_output {
-                let report_path = format!("{}.html", p.trim_end_matches('.'));
+            if let Some(ref p) = parquet_path {
+                let report_path = format!("{}.html", p.trim_end_matches(".parquet"));
                 match crate::output::generate_html_report_from_parquet(p, &report_path) {
                     Ok(_) => info!("Generated HTML report: {}", report_path),
                     Err(e) => warn!("Failed to generate HTML report from Parquet: {}", e),
                 }
             } else {
-                let report_path = format!("{}.html", self.parameters.output_file.trim_end_matches('.').trim_end_matches(".tsv"));
+                let report_path = format!("{}.html", self.parameters.output_file.trim_end_matches(".tsv"));
                 match crate::output::generate_html_report(&self.parameters.output_file, &report_path) {
                     Ok(_) => info!("Generated HTML report: {}", report_path),
                     Err(e) => warn!("Failed to generate HTML report: {}", e),

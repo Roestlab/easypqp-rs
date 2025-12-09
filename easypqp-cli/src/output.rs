@@ -26,11 +26,7 @@ use arrow::record_batch::RecordBatch;
 #[cfg(feature = "parquet")]
 use parquet::arrow::ArrowWriter;
 #[cfg(feature = "parquet")]
-use parquet::file::serialized_reader::SerializedFileReader;
-#[cfg(feature = "parquet")]
-use parquet::arrow::arrow_reader::ParquetFileArrowReader;
-#[cfg(feature = "parquet")]
-use std::fs::File;
+use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
 
 pub fn write_assays_to_tsv<P: AsRef<Path>>(
@@ -87,7 +83,7 @@ pub fn write_assays_to_tsv<P: AsRef<Path>>(
     // Some models/consumers expect RT in a 0-100 normalized scale (AlphaPeptiDeep),
     // while others use 0-1. Apply a harmless output-only heuristic: if the
     // maximum predicted RT across assays is <= 1.0, scale by 100 for output.
-    let max_rt = assays
+    let _max_rt = assays
         .iter()
         .map(|a| a.retention_time)
         .fold(0.0_f32, |m, v| if v > m { v } else { m });
@@ -431,7 +427,7 @@ impl ParquetChunkWriter {
         Ok(())
     }
 
-    pub fn close(mut self) -> Result<()> {
+    pub fn close(self) -> Result<()> {
         self.writer.close()?;
         Ok(())
     }
@@ -762,22 +758,22 @@ pub fn generate_html_report_from_parquet<P: AsRef<Path>>(_parquet_path: P, _outp
 pub fn generate_html_report_from_parquet<P: AsRef<Path>>(parquet_path: P, output_html: &str) -> Result<()> {
     use arrow::array::{StringArray, Float64Array, Int32Array};
     use arrow::datatypes::DataType;
-    use std::sync::Arc;
 
     let path = parquet_path.as_ref();
     let file = File::open(path)?;
-    let file_reader = SerializedFileReader::new(file)?;
-    let mut arrow_reader = ParquetFileArrowReader::new(Arc::new(file_reader));
-    let mut record_reader = arrow_reader.get_record_reader(1024)?;
+    
+    // Use the 57.1.0 API: ParquetRecordBatchReaderBuilder
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file)?;
+    let schema = builder.schema().clone();
+    let reader = builder.build()?;
 
     // Collect headers
-    let schema = arrow_reader.get_schema()?;
     let headers: Vec<String> = schema.fields().iter().map(|f| f.name().clone()).collect();
 
     // Read batches and convert to Vec<Vec<String>> rows
     let mut all_rows: Vec<Vec<String>> = Vec::new();
-    while let Some(batch) = record_reader.next()? {
-        let batch = batch;
+    for batch_result in reader {
+        let batch = batch_result?;
         let ncols = batch.num_columns();
         let nrows = batch.num_rows();
         for row_idx in 0..nrows {
@@ -862,8 +858,28 @@ pub fn generate_html_report_from_parquet<P: AsRef<Path>>(parquet_path: P, output
         gene_name.push(get_str(row, "GeneName").map(|s| s.to_string()));
     }
 
-    // Basic statistics and the rest of the report reuse the same code as generate_html_report.
-    // (Copying the remaining parts from generate_html_report for plotting/stats.)
+    // Basic statistics
+    let mut unique_target_peptides: HashSet<String> = HashSet::new();
+    let mut unique_decoy_peptides: HashSet<String> = HashSet::new();
+    let mut unique_target_proteins: HashSet<String> = HashSet::new();
+    let mut unique_decoy_proteins: HashSet<String> = HashSet::new();
+    let mut target_transitions = 0usize;
+    let mut decoy_transitions = 0usize;
+
+    for (i, td) in target_flags.iter().enumerate() {
+        let pep = peptide_seq[i].clone().unwrap_or_default();
+        let prot = protein_id[i].clone().unwrap_or_default();
+        if td == "Target" {
+            target_transitions += 1;
+            if !pep.is_empty() { unique_target_peptides.insert(pep); }
+            if !prot.is_empty() { unique_target_proteins.insert(prot); }
+        } else {
+            decoy_transitions += 1;
+            if !pep.is_empty() { unique_decoy_peptides.insert(pep); }
+            if !prot.is_empty() { unique_decoy_proteins.insert(prot); }
+        }
+    }
+
     // Intensity stats by Target/Decoy
     fn mean_sd(v: &Vec<f64>) -> (f64, f64) {
         let n = v.len() as f64;
