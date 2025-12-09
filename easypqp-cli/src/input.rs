@@ -134,7 +134,6 @@ impl From<FineTuneOptions> for FineTuneSettings {
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct DLFeatureGenerators {
-    pub predict_properties: Option<bool>,
     pub retention_time: Option<DLModel>,
     pub ion_mobility: Option<DLModel>,
     pub ms2_intensity: Option<DLModel>,
@@ -147,7 +146,6 @@ pub struct DLFeatureGenerators {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DLFeatureGeneratorSettings {
-    pub predict_properties: bool,
     pub retention_time: DLModel,
     pub ion_mobility: DLModel,
     pub ms2_intensity: DLModel,
@@ -161,7 +159,6 @@ pub struct DLFeatureGeneratorSettings {
 impl Default for DLFeatureGeneratorSettings {
     fn default() -> Self {
         Self {
-            predict_properties: false,
             retention_time: DLModel {
                 model_path: String::new(),
                 constants_path: String::new(),
@@ -212,12 +209,12 @@ impl From<DLFeatureGenerators> for DLFeatureGeneratorSettings {
             architecture: String::new(),
         };
 
-        if value.predict_properties.unwrap_or(false)
-            && value.retention_time.clone().is_none()
+        // If no models are explicitly configured, download and use pretrained models
+        if value.retention_time.clone().is_none()
             && value.ion_mobility.clone().is_none()
             && value.ms2_intensity.clone().is_none()
         {
-            log::info!("Predicting properties is enabled, but no model configurations are provided. Will attempt to retrieve and use AlphaPeptDeep generic pretrained models.");
+            log::info!("No model configurations provided. Will attempt to retrieve and use AlphaPeptDeep generic pretrained models.");
             let _ = redeem_properties::utils::peptdeep_utils::download_pretrained_models_exist();
             retention_time_model_config = DLModel {
                 model_path: "data/peptdeep_generic_pretrained_models/generic/rt.pth".to_string(),
@@ -255,7 +252,6 @@ impl From<DLFeatureGenerators> for DLFeatureGeneratorSettings {
         }
 
         Self {
-            predict_properties: value.predict_properties.unwrap_or(false),
             retention_time: value
                 .retention_time
                 .unwrap_or_else(|| retention_time_model_config),
@@ -471,7 +467,7 @@ pub struct InsilicoPQPDto<'a> {
 
 // 3. Implement conversion methods
 impl InsilicoPQP {
-    pub fn as_serializable(&self) -> InsilicoPQPDto {
+    pub fn as_serializable(&self) -> InsilicoPQPDto<'_> {
         InsilicoPQPDto {
             version: &self.version,
             database: SageParametersDto {
