@@ -17,7 +17,11 @@ use easypqp_core::{
     util::write_bytes_to_file, PeptideProperties,
 };
 
-use crate::{input::InsilicoPQP, output::write_assays_to_tsv};
+use crate::input::InsilicoPQP;
+use crate::output::write_assays_to_tsv;
+use crate::output::generate_html_report_from_memory;
+#[cfg(feature = "parquet")]
+use crate::output::write_assays_to_parquet;
 
 struct PropertyPredictionScores<'a> {
     parameters: &'a InsilicoPQP,
@@ -435,6 +439,18 @@ impl Runner {
     
         let start_time = Instant::now();
         
+        // Prepare optional streaming parquet writer (created only when feature enabled).
+        #[cfg(feature = "parquet")]
+        let mut parquet_writer = if let Some(ref p) = self.parameters.parquet_output {
+            // instantiate parquet writer
+            Some(crate::output::ParquetChunkWriter::try_new(p)?)
+        } else {
+            None
+        };
+
+        // No in-memory report accumulation: when Parquet output + report is requested
+        // we'll generate the report directly from the Parquet file after closing the writer.
+
         for (i, peptide_chunk) in self.peptides.chunks(max_chunk_size).enumerate() {
             if max_chunk_size < self.peptides.len() {
                 log::info!(
@@ -444,26 +460,58 @@ impl Runner {
                     peptide_chunk.len()
                 );
             }
-        
+
             let mut predictor = PropertyPredictionScores::new(&self.parameters, peptide_chunk);
             let assays = predictor.predict_properties()?;
-        
-            write_assays_to_tsv(
-                &assays,
-                peptide_chunk, // use the chunk peptides, not full self.peptides
-                &self.parameters.output_file,
-                &self.parameters.insilico_settings,
-            )?;
+
+            if self.parameters.parquet_output.is_some() {
+                #[cfg(feature = "parquet")]
+                {
+                    if let Some(ref mut w) = parquet_writer {
+                        w.write_chunk(&assays, peptide_chunk, &self.parameters.insilico_settings)?;
+                    }
+                }
+
+                #[cfg(not(feature = "parquet"))]
+                {
+                    warn!("Parquet support not enabled in this build. Rebuild with feature 'parquet' to use --parquet.");
+                }
+
+                // No-op for report accumulation here when using Parquet; report will be
+                // generated from the written Parquet file after the writer is closed.
+            } else {
+                write_assays_to_tsv(
+                    &assays,
+                    peptide_chunk, // use the chunk peptides, not full self.peptides
+                    &self.parameters.output_file,
+                    &self.parameters.insilico_settings,
+                )?;
+            }
         }
 
-        // After generating the TSV, optionally generate an HTML report.
+        // Close parquet writer if present
+        #[cfg(feature = "parquet")]
+        if let Some(w) = parquet_writer.take() {
+            w.close()?;
+        }
+
+        // Generate HTML report: if Parquet output was requested, generate report from
+        // the Parquet file; otherwise use the TSV-based generator on the output TSV.
         if self.parameters.write_report {
-            let report_path = format!("{}.html", self.parameters.output_file.trim_end_matches('.').trim_end_matches(".tsv"));
-            match crate::output::generate_html_report(&self.parameters.output_file, &report_path) {
-                Ok(_) => info!("Generated HTML report: {}", report_path),
-                Err(e) => warn!("Failed to generate HTML report: {}", e),
+            if let Some(ref p) = self.parameters.parquet_output {
+                let report_path = format!("{}.html", p.trim_end_matches('.'));
+                match crate::output::generate_html_report_from_parquet(p, &report_path) {
+                    Ok(_) => info!("Generated HTML report: {}", report_path),
+                    Err(e) => warn!("Failed to generate HTML report from Parquet: {}", e),
+                }
+            } else {
+                let report_path = format!("{}.html", self.parameters.output_file.trim_end_matches('.').trim_end_matches(".tsv"));
+                match crate::output::generate_html_report(&self.parameters.output_file, &report_path) {
+                    Ok(_) => info!("Generated HTML report: {}", report_path),
+                    Err(e) => warn!("Failed to generate HTML report: {}", e),
+                }
             }
-        }         
+        }
     
         let execution_time = Instant::now() - start_time;
         log::info!(

@@ -38,6 +38,7 @@ pub struct InsilicoPQP {
     pub peptide_chunking: ChunkingStrategy,
     pub output_file: String,
     pub write_report: bool,
+    pub parquet_output: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
@@ -281,6 +282,7 @@ pub struct Input {
     pub peptide_chunking: ChunkingStrategy,
     pub output_file: Option<String>,
     pub write_report: Option<bool>,
+    pub parquet_output: Option<String>,
 }
 
 impl Input {
@@ -305,6 +307,10 @@ impl Input {
         // CLI flag to disable writing HTML report (default is to write)
         if matches.get_flag("no-write-report") {
             input.write_report = Some(false);
+        }
+
+        if let Some(parquet) = matches.get_one::<String>("parquet") {
+            input.parquet_output = Some(parquet.into());
         }
 
         // avoid to later panic if these parameters are not set (but doesn't check if files exist)
@@ -427,6 +433,7 @@ impl Input {
                 .clone()
                 .unwrap_or_else(|| "insilico_library.tsv".into()),
             write_report: self.write_report.unwrap_or(true),
+            parquet_output: self.parquet_output.clone(),
         })
     }
 }
