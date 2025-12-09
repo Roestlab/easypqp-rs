@@ -19,9 +19,6 @@ use easypqp_core::{
 
 use crate::input::InsilicoPQP;
 use crate::output::write_assays_to_tsv;
-use crate::output::generate_html_report_from_memory;
-#[cfg(feature = "parquet")]
-use crate::output::write_assays_to_parquet;
 
 struct PropertyPredictionScores<'a> {
     parameters: &'a InsilicoPQP,

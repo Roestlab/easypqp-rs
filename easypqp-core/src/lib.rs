@@ -20,6 +20,8 @@ pub struct InsilicoPQPSettings {
     pub fragmentation_model: String,
     /// Allowed fragment types (default: 'b,y'). Current MS2 prediction model only supports 'b' and 'y'
     pub allowed_fragment_types: Vec<String>,
+    /// Scale factor to apply to retention times for output (e.g., 100.0 to convert 0-1 -> 0-100)
+    pub rt_scale: f32,
 }
 
 impl Default for InsilicoPQPSettings {
@@ -31,6 +33,7 @@ impl Default for InsilicoPQPSettings {
             max_transitions: 6,
             fragmentation_model: "cid_hcd".to_string(),
             allowed_fragment_types: vec!["b".to_string(), "y".to_string()],
+            rt_scale: 100.0_f32,
         }
     }
     
