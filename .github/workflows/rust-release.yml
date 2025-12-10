@@ -80,9 +80,6 @@ jobs:
       - name: Upload release binary (musl with vendored OpenSSL)
         if: contains(matrix.target, 'musl')
         uses: taiki-e/upload-rust-binary-action@v1
-        env:
-          OPENSSL_STATIC: 1
-          OPENSSL_VENDORED: 1
         with:
           bin: ${{ matrix.bin }}
           archive: ${{ matrix.name }}-${{ steps.tag.outputs.name }}
@@ -92,6 +89,9 @@ jobs:
           zip: windows
           token: ${{ secrets.GITHUB_TOKEN }}
           ref: refs/tags/${{ steps.tag.outputs.name }}
+        env:
+          OPENSSL_STATIC: 1
+          OPENSSL_VENDORED: 1
 
       - name: Upload release binary (non-musl)
         if: "!contains(matrix.target, 'musl')"
