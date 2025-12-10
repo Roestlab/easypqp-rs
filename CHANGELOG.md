@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - Update manylinux version to 2_28 for improved compatibility in wheel builds
 - Update manylinux version to 2_35 and add before-script for dependencies
 - Update package manager command for installing perl-IPC-Cmd in manylinux build
+- Improve dependency installation for manylinux build by checking package manager
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -21,6 +22,7 @@ All notable changes to this project will be documented in this file.
 - Update CHANGELOG.md
 - Update CHANGELOG.md
 - Add concurrency settings to rust-release workflow
+- Update CHANGELOG.md
 - Update CHANGELOG.md
 - Update CHANGELOG.md
 
