@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["mass-spectrometry", "bioinformatics", "proteomics"]
 classifiers = [
-    "Development Status :: 1 - Alpha",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: BSD License",
     "Programming Language :: Rust",
