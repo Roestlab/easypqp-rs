@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Improve sccache setup and build steps for better clarity and organization
 - Add vendored-openssl feature for improved compatibility in Python wheel builds
 - Update manylinux version to 2_28 for improved compatibility in wheel builds
+- Update manylinux version to 2_35 and add before-script for dependencies
 
 ### ⚙️ Miscellaneous Tasks
 
@@ -19,6 +20,7 @@ All notable changes to this project will be documented in this file.
 - Update CHANGELOG.md
 - Update CHANGELOG.md
 - Add concurrency settings to rust-release workflow
+- Update CHANGELOG.md
 
 ## [0.1.1] - 2025-12-10
 
