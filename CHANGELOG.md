@@ -34,6 +34,9 @@ All notable changes to this project will be documented in this file.
 - Remove emoji from about description in easypqp CLI
 - Enhance musl-tools installation step with additional dependencies
 - Update Docker image tag prefix and enhance Python wheel build arguments
+- Add dead code allowance for InputSchema and DatabaseSchema structs
+- Set OPENSSL_STATIC and OPENSSL_VENDORED environment variables for musl targets in release workflow
+- Add missing newline at end of Cargo.toml and ensure proper formatting
 
 ### 💼 Other
 
@@ -66,6 +69,7 @@ All notable changes to this project will be documented in this file.
 - Update binary names and build configurations for different platforms
 - Update dependencies and add logging for error handling in python wrapped method
 - Update value hint for file path in main.rs
+- Update CHANGELOG.md
 - Update CHANGELOG.md
 - Update CHANGELOG.md
 
