@@ -260,15 +260,16 @@ impl From<DLFeatureGenerators> for DLFeatureGeneratorSettings {
             && value.ion_mobility.clone().is_none()
             && value.ms2_intensity.clone().is_none()
         {
-            log::info!("No model configurations provided. Will attempt to retrieve and use AlphaPeptDeep generic pretrained models.");
+            log::info!("No model configurations provided. Will attempt to retrieve and use pretrained models.");
             let _ = redeem_properties::utils::peptdeep_utils::download_pretrained_models_exist();
             retention_time_model_config = DLModel {
-                model_path: "data/peptdeep_generic_pretrained_models/generic/rt.pth".to_string(),
+                model_path: "data/pretrained_models/redeem/20251205_100_epochs_min_max_rt_cnn_tf.safetensors".to_string(),
                 constants_path:
-                    "data/peptdeep_generic_pretrained_models/generic/rt.pth.model_const.yaml"
+                    "data/pretrained_models/alphapeptdeep/generic/rt.pth.model_const.yaml"
                         .to_string(),
-                architecture: "rt_cnn_lstm".to_string(),
+                architecture: "rt_cnn_tf".to_string(),
             };
+            log::info!("Pre-trained retention time model (architecture: {}): {}", retention_time_model_config.architecture,retention_time_model_config.model_path);
 
             // Note: Probably only want to use and set CCS model if instrument is TIMSTOF, if the model config is not explicitly set
             if value
@@ -279,22 +280,24 @@ impl From<DLFeatureGenerators> for DLFeatureGeneratorSettings {
                 == "TIMSTOF".to_string()
             {
                 ion_mobility_model_config = DLModel {
-                    model_path: "data/peptdeep_generic_pretrained_models/generic/ccs.pth"
+                    model_path: "data/pretrained_models/redeem/20251205_500_epochs_early_stopped_100_min_max_ccs_cnn_tf.safetensors"
                         .to_string(),
                     constants_path:
-                        "data/peptdeep_generic_pretrained_models/generic/ccs.pth.model_const.yaml"
+                        "data/pretrained_models/alphapeptdeep/generic/ccs.pth.model_const.yaml"
                             .to_string(),
-                    architecture: "ccs_cnn_lstm".to_string(),
+                    architecture: "ccs_cnn_tf".to_string(),
                 };
+                log::info!("Pre-trained ion mobility model (architecture: {}): {}", ion_mobility_model_config.architecture,ion_mobility_model_config.model_path);
             }
 
             ms2_intensity_model_config = DLModel {
-                model_path: "data/peptdeep_generic_pretrained_models/generic/ms2.pth".to_string(),
+                model_path: "data/pretrained_models/alphapeptdeep/generic/ms2.pth".to_string(),
                 constants_path:
-                    "data/peptdeep_generic_pretrained_models/generic/ms2.pth.model_const.yaml"
+                    "data/pretrained_models/alphapeptdeep/generic/ms2.pth.model_const.yaml"
                         .to_string(),
                 architecture: "ms2_bert".to_string(),
             };
+            log::info!("Pre-trained PeptDeep MS2 intensity model (architecture: {}): {}", ms2_intensity_model_config.architecture,ms2_intensity_model_config.model_path);
         }
 
         Self {
