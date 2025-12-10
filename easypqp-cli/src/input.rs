@@ -80,7 +80,9 @@ pub struct FineTuneSettings {
     /// Enable fine-tuning
     pub fine_tune: bool,
     
-    /// Path to training data TSV file
+    /// Path to training data TSV file. Required columns: 'sequence' (modified sequence annotated with square bracket mass shift, e.g., MGC[+57.0215]AAR), 'precursor_charge', 'retention_time', 'ion_mobility' (if using timsTOF),
+    /// 'fragment_type', 'fragment_series_number', 'product_charge', 'intensity'
+    #[schemars(description = "TSV file with columns: sequence, precursor_charge, retention_time, ion_mobility (if applicable), fragment_type, fragment_series_number, product_charge, intensity")]
     pub train_data_path: String,
     
     /// Batch size for training
