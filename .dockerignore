@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+target/
+dist/
+*.whl
+
+# Data files
+*.tsv
+*.parquet
+*.fasta
+*.html
+*.json
+data/
+test-data/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# Documentation
+*.md
+docs/
+
+# CI/CD
+.github/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Misc
+*.log
+.DS_Store
