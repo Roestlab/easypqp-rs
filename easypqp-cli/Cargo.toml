@@ -24,10 +24,12 @@ maud = "0.27.0"
 plotly = "0.12.1"
 arrow = { version = "57.1.0", optional = true }
 parquet = { version = "57.1.0", optional = true }
+openssl-sys = { version = "0.9", optional = true, features = ["vendored"] }
 
 [features]
 default = ["parquet"]
 parquet = ["arrow", "dep:parquet"]
+vendored-openssl = ["openssl-sys"]
 
 [dev-dependencies]
 assert_cmd = "2.0"

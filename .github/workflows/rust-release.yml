@@ -77,13 +77,6 @@ jobs:
           fi
         shell: bash
 
-      - name: Set OpenSSL env for musl
-        if: contains(matrix.target, 'musl')
-        run: |
-          echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
-          echo "OPENSSL_VENDORED=1" >> $GITHUB_ENV
-        shell: bash
-
       - name: Upload release binary (musl with vendored OpenSSL)
         if: contains(matrix.target, 'musl')
         uses: taiki-e/upload-rust-binary-action@v1
@@ -91,6 +84,7 @@ jobs:
           bin: ${{ matrix.bin }}
           archive: ${{ matrix.name }}-${{ steps.tag.outputs.name }}
           target: ${{ matrix.target }}
+          features: vendored-openssl
           include: LICENSE,README.md
           tar: unix
           zip: windows
