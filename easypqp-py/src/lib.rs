@@ -25,10 +25,12 @@ use easypqp_cli::runner::Runner;
 /// * `batch_size`: Optional batch size for parallel processing. Overrides the JSON field parameter.
 /// * `write_report`: Optional flag to generate HTML report. Overrides the JSON field parameter.
 /// * `parquet_output`: Optional flag to output in Parquet format. Overrides the JSON field parameter.
+/// * `threads`: Optional number of threads for parallel processing. If None, uses all available cores.
 /// 
 /// # Returns
 /// * `Ok(())` if the library generation is successful.
 #[pyfunction]
+#[pyo3(signature = (parameters, fasta=None, output_file=None, generate_decoys=None, decoy_tag=None, precursor_charge=None, max_fragment_charge=None, min_transitions=None, max_transitions=None, fragmentation_model=None, allowed_fragment_types=None, rt_scale=None, fine_tune=None, train_data_path=None, save_model=None, instrument=None, nce=None, batch_size=None, write_report=None, parquet_output=None, threads=None))]
 fn generate_insilico_library(
     parameters: String,
     fasta: Option<String>,
@@ -50,7 +52,18 @@ fn generate_insilico_library(
     batch_size: Option<usize>,
     write_report: Option<bool>,
     parquet_output: Option<bool>,
+    threads: Option<usize>,
 ) -> PyResult<()> {
+    // Configure Rayon thread pool if threads parameter is provided
+    if let Some(num_threads) = threads {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(num_threads)
+            .build_global()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                format!("Failed to set number of threads: {}. Note: thread pool can only be initialized once per process.", e)
+            ))?;
+    }
+    
     let _ = env_logger::Builder::default()
         .filter_level(log::LevelFilter::Error)
         .parse_env(env_logger::Env::default().filter_or("EASYPQP_LOG", "error,easypqp=info"))
