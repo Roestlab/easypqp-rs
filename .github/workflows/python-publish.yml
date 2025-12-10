@@ -49,7 +49,7 @@ jobs:
         with:
           maturin-version: latest
           command: build
-          args: --release -o dist --interpreter python3.10 python3.11 python3.12 python3.13 --manifest-path easypqp-py/Cargo.toml
+          args: --release -o dist --features vendored-openssl --interpreter python3.10 python3.11 python3.12 python3.13 --manifest-path easypqp-py/Cargo.toml
           manylinux: 2_17
       
       - name: Build wheels (Windows/macOS)
