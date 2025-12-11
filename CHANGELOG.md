@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.5] - 2025-12-11
+
+### 🐛 Bug Fixes
+
+- Update model paths in DLModel configurations to include 'pretrained_models' directory
+- Update package version to 0.1.5 in Cargo.toml and pyproject.toml files
+
+### ⚙️ Miscellaneous Tasks
+
+- Update CHANGELOG.md
+
 ## [0.1.4] - 2025-12-11
 
 ### 🐛 Bug Fixes
