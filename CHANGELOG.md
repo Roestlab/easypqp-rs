@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.4] - 2025-12-11
+
+### 🐛 Bug Fixes
+
+- Update note formatting in README for better visibility
+- Update package version to 0.1.4 in Cargo.toml and pyproject.toml files
+- Correct pip install command in README from easypqp-rs to easypqp_rs
+
+### ⚙️ Miscellaneous Tasks
+
+- Update CHANGELOG.md
+
 ## [0.1.3] - 2025-12-11
 
 ### 🐛 Bug Fixes
