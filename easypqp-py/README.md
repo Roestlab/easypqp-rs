@@ -57,7 +57,7 @@ pip install target/wheels/easypqp_rs-*.whl
 ### Option 3: Install via pip (when published)
 
 ```bash
-pip install easypqp-rs
+pip install easypqp_rs
 ```
 
 ## Development
