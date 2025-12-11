@@ -1,14 +1,13 @@
 {
-    "version": "0.1.0-alpha",
     "database": {
         "enzyme": {
             "missed_cleavages": 1,
-            "min_len": null,
-            "max_len": null,
+            "min_len": 7,
+            "max_len": 50,
             "cleave_at": "KR",
             "restrict": "P",
-            "c_terminal": null,
-            "semi_enzymatic": null
+            "c_terminal": true,
+            "semi_enzymatic": false
         },
         "peptide_min_mass": 500.0,
         "peptide_max_mass": 5000.0,
@@ -33,10 +32,10 @@
         "allowed_fragment_types": [
             "b",
             "y"
-        ]
+        ],
+        "rt_scale": 100.0
     },
     "dl_feature_generators": {
-        "predict_properties": true,
         "device": "cpu",
         "fine_tune_config": {
             "fine_tune": false,
@@ -51,5 +50,7 @@
         "batch_size": 64
     },
     "peptide_chunking": 0,
-    "output_file": "./easypqp_insilico_library.tsv"
+    "output_file": "./easypqp_insilico_library.tsv",
+    "write_report": true,
+    "parquet_output": false
 }
