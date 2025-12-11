@@ -175,7 +175,7 @@ Common modification masses:
 | `allowed_fragment_types` | array[string] | `["b", "y"]` | Allowed fragment ion types: `"b"`, `"y"` |
 | `rt_scale` | number | `100.0` | Retention time scaling factor (multiplies predicted RT) |
 
-> ![ NOTE ]
+> [!NOTE]
 > The current MS2 intensity prediction models only support `"b"` and `"y"` fragment ions. 
 
 **Example:**
@@ -195,7 +195,7 @@ Common modification masses:
 
 #### 3. Deep Learning Models (OPTIONAL)
 
-> ![ NOTE ]
+> [!NOTE]
 > If no `retention_time`, `ion_mobility`, or `ms2_intensity` fields are provided under `dl_feature_generators`, pretrained models will be automatically downloaded and used. The current default pretrained models used are:
 > - RT: `rt_cnn_tf` - A CNN-Transformer model trained on the [ProteomicsML repository RT dataset](https://proteomicsml.org/datasets/retentiontime/ProteomeTools_RT.html). This model is based on AlphaPeptDeep's CNN-LSTM implementation, with the LSTM replaced by a Transformer encoder.
 > - CCS: `ccs_cnn_tf` - A CNN-Transformer model trained on the [ProteomicsML repository CCS dataset](https://proteomicsml.org/datasets/ionmobility/Meier_TIMS.html). This model is also based on AlphaPeptDeep's CNN-LSTM implementation, with the LSTM replaced by a Transformer encoder.
