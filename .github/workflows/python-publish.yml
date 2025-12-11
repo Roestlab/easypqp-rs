@@ -28,7 +28,7 @@ jobs:
         with:
           maturin-version: latest
           command: build
-          args: --release -o dist --features vendored-openssl --manifest-path easypqp-py/Cargo.toml
+          args: --release -o dist --features vendored-openssl --interpreter 3.10 3.11 3.12 3.13 --manifest-path easypqp-py/Cargo.toml
           container: quay.io/pypa/manylinux_2_28_x86_64:latest
       
       - name: Build wheels (Windows/macOS)
@@ -37,8 +37,7 @@ jobs:
         with:
           maturin-version: latest
           command: build
-          args: --release -o dist --manifest-path easypqp-py/Cargo.toml
-          working-directory: .
+          args: --release -o dist --interpreter 3.10 3.11 3.12 3.13 --manifest-path easypqp-py/Cargo.toml
           
       - name: Upload wheels
         uses: actions/upload-artifact@v4
