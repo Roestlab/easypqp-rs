@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.2] - 2025-12-10
+## [0.1.2] - 2025-12-11
 
 ### 🐛 Bug Fixes
 
@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
 - Update CHANGELOG.md
 - Update CHANGELOG.md
 - Add concurrency settings to rust-release workflow
+- Update CHANGELOG.md
 - Update CHANGELOG.md
 - Update CHANGELOG.md
 - Update CHANGELOG.md
