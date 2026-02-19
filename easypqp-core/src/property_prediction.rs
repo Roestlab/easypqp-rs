@@ -15,7 +15,7 @@ use redeem_properties::{
 use rustyms::fragment::FragmentKind;
 use rustyms::system::e;
 use rustyms::system::usize::Charge;
-use rustyms::FragmentationModel;
+use rustyms::{Chemical, FragmentationModel, MolecularCharge};
 use sage_core::peptide::Peptide;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -459,12 +459,21 @@ impl<'db, 'params> PropertyPrediction<'db, 'params> {
                 || (model, send.clone()),
                 |(model, sender), ((peptide_idx, charge), (rt_pred, ccs_pred, ms2_pred))| {
                     let peptide = &self.peptides[*peptide_idx as usize];
-                    let precursor_mz = peptide.monoisotopic / (*charge as f32);
 
                     let peptidoform = rustyms::peptidoform::PeptidoformIon::pro_forma(
                         &peptide.to_string(),
                         None,
                     )?;
+
+                    // Compute precursor m/z using rustyms:
+                    // neutral_formula + z protons, then divide by charge
+                    let neutral_formula = peptidoform.formulas().first().cloned().unwrap_or_default();
+                    let proton_formula = MolecularCharge::proton(*charge as isize).formula();
+                    let charged_mass = (neutral_formula + &proton_formula)
+                        .monoisotopic_mass();
+                    let precursor_mz = (charged_mass
+                        / rustyms::system::f64::Charge::new::<e>(*charge as f64))
+                        .value as f32;
 
                     let fragments = peptidoform.generate_theoretical_fragments(
                         Charge::new::<e>(self.insilico_settings.max_fragment_charge),
