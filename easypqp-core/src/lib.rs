@@ -56,6 +56,12 @@ pub struct InsilicoPQPSettings {
     #[serde(default = "InsilicoPQPSettings::default_enable_unannotated")]
     #[schemars(description = "Keep unmatched mass brackets instead of erroring (default: true)")]
     pub enable_unannotated: bool,
+
+    /// Optional path to a custom unimod.xml file. If not set, the embedded
+    /// unimod.xml bundled with the binary is used.
+    #[serde(default)]
+    #[schemars(description = "Path to a custom unimod.xml file (default: use embedded)")]
+    pub unimod_xml_path: Option<String>,
 }
 
 impl InsilicoPQPSettings {
@@ -86,6 +92,7 @@ impl Default for InsilicoPQPSettings {
             unimod_annotation: true,
             max_delta_unimod: 0.02,
             enable_unannotated: true,
+            unimod_xml_path: None,
         }
     }
     
