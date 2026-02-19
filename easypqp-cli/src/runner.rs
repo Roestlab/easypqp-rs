@@ -452,7 +452,7 @@ impl Runner {
         #[cfg(feature = "parquet")]
         let mut parquet_writer = if let Some(ref p) = parquet_path {
             // instantiate parquet writer
-            Some(crate::output::ParquetChunkWriter::try_new(p, &self.parameters.insilico_settings)?)
+            Some(crate::output::ParquetChunkWriter::try_new(p, &self.parameters.insilico_settings, &self.parameters.database.decoy_tag)?)
         } else {
             None
         };
@@ -511,6 +511,7 @@ impl Runner {
                     output_path.as_ref().unwrap(),
                     &self.parameters.insilico_settings,
                     unimod_db.as_ref(),
+                    &self.parameters.database.decoy_tag,
                 )?;
             }
         }

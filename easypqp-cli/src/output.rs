@@ -47,6 +47,7 @@ pub fn write_assays_to_tsv<P: AsRef<Path>>(
     path: P,
     insilico_settings: &InsilicoPQPSettings,
     unimod_db: Option<&UnimodDb>,
+    decoy_tag: &str,
 ) -> Result<()> {
     let path = path.as_ref();
     let write_header = !path.exists() || metadata(path)?.len() == 0;
@@ -153,6 +154,11 @@ pub fn write_assays_to_tsv<P: AsRef<Path>>(
 
         let protein_id_field = if protein_accessions.is_empty() {
             "".to_string()
+        } else if decoy && !decoy_tag.is_empty() {
+            protein_accessions.iter()
+                .map(|a| if a.starts_with(decoy_tag) { a.clone() } else { format!("{}{}", decoy_tag, a) })
+                .collect::<Vec<_>>()
+                .join(";")
         } else {
             protein_accessions.join(";")
         };
@@ -162,6 +168,11 @@ pub fn write_assays_to_tsv<P: AsRef<Path>>(
 
         let gene_name_field = if protein_genes.is_empty() {
             "".to_string()
+        } else if decoy && !decoy_tag.is_empty() {
+            protein_genes.iter()
+                .map(|g| if g.starts_with(decoy_tag) { g.clone() } else { format!("{}{}", decoy_tag, g) })
+                .collect::<Vec<_>>()
+                .join(";")
         } else {
             protein_genes.join(";")
         };
@@ -239,11 +250,12 @@ pub struct ParquetChunkWriter {
     next_peptide_offset: usize,
     unimod_db: Option<UnimodDb>,
     enable_unannotated: bool,
+    decoy_tag: String,
 }
 
 #[cfg(feature = "parquet")]
 impl ParquetChunkWriter {
-    pub fn try_new<P: AsRef<Path>>(path: P, insilico_settings: &InsilicoPQPSettings) -> Result<Self> {
+    pub fn try_new<P: AsRef<Path>>(path: P, insilico_settings: &InsilicoPQPSettings, decoy_tag: &str) -> Result<Self> {
         let fields = vec![
             Field::new("PrecursorMz", DataType::Float64, false),
             Field::new("ProductMz", DataType::Float64, false),
@@ -284,6 +296,7 @@ impl ParquetChunkWriter {
             next_peptide_offset: 0,
             unimod_db,
             enable_unannotated: insilico_settings.enable_unannotated,
+            decoy_tag: decoy_tag.to_string(),
         })
     }
 
@@ -347,9 +360,29 @@ impl ParquetChunkWriter {
                 .filter(|s| !s.is_empty())
                 .collect();
 
-            let protein_id_field = if protein_accessions.is_empty() { None } else { Some(protein_accessions.join(";")) };
+            let is_decoy = decoy_flag != 0;
+
+            let protein_id_field = if protein_accessions.is_empty() {
+                None
+            } else if is_decoy && !self.decoy_tag.is_empty() {
+                Some(protein_accessions.iter()
+                    .map(|a| if a.starts_with(&self.decoy_tag) { a.clone() } else { format!("{}{}", self.decoy_tag, a) })
+                    .collect::<Vec<_>>()
+                    .join(";"))
+            } else {
+                Some(protein_accessions.join(";"))
+            };
             let uniprot_id_field = protein_id_field.clone();
-            let gene_name_field = if protein_genes.is_empty() { None } else { Some(protein_genes.join(";")) };
+            let gene_name_field = if protein_genes.is_empty() {
+                None
+            } else if is_decoy && !self.decoy_tag.is_empty() {
+                Some(protein_genes.iter()
+                    .map(|g| if g.starts_with(&self.decoy_tag) { g.clone() } else { format!("{}{}", self.decoy_tag, g) })
+                    .collect::<Vec<_>>()
+                    .join(";"))
+            } else {
+                Some(protein_genes.join(";"))
+            };
 
             let non_zero_indices: Vec<usize> = assay.product.intensity
                 .iter()
