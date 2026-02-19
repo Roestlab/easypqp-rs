@@ -525,24 +525,35 @@ impl Input {
         if let Some(unimod_xml_path) = unimod_xml_path {
             input.insilico_settings.unimod_xml_path = Some(unimod_xml_path);
         }
-        if let Some(fine_tune) = fine_tune {
-            input.dl_feature_generators.clone().unwrap().fine_tune_config.unwrap().fine_tune = fine_tune;
+
+        // Apply dl_feature_generators overrides, initializing the section if needed
+        if fine_tune.is_some() || train_data_path.is_some() || save_model.is_some()
+            || instrument.is_some() || nce.is_some() || batch_size.is_some()
+        {
+            let dl = input.dl_feature_generators.get_or_insert_with(DLFeatureGenerators::default);
+            if let Some(instrument) = instrument {
+                dl.instrument = Some(instrument);
+            }
+            if let Some(nce) = nce {
+                dl.nce = Some(nce);
+            }
+            if fine_tune.is_some() || train_data_path.is_some() || save_model.is_some() || batch_size.is_some() {
+                let ft = dl.fine_tune_config.get_or_insert_with(FineTuneSettings::default);
+                if let Some(fine_tune) = fine_tune {
+                    ft.fine_tune = fine_tune;
+                }
+                if let Some(train_data_path) = train_data_path {
+                    ft.train_data_path = train_data_path;
+                }
+                if let Some(save_model) = save_model {
+                    ft.save_model = save_model;
+                }
+                if let Some(batch_size) = batch_size {
+                    ft.batch_size = batch_size;
+                }
+            }
         }
-        if let Some(train_data_path) = train_data_path {
-            input.dl_feature_generators.clone().unwrap().fine_tune_config.unwrap().train_data_path = train_data_path;
-        }
-        if let Some(save_model) = save_model {
-            input.dl_feature_generators.clone().unwrap().fine_tune_config.unwrap().save_model = save_model;
-        }
-        if let Some(instrument) = instrument {
-            input.dl_feature_generators.clone().unwrap().instrument = Some(instrument);
-        }
-        if let Some(nce) = nce {
-            input.dl_feature_generators.clone().unwrap().nce = Some(nce);
-        }
-        if let Some(batch_size) = batch_size {
-            input.dl_feature_generators.clone().unwrap().fine_tune_config.unwrap().batch_size = batch_size;
-        }
+
         if let Some(write_report) = write_report {
             input.write_report = Some(write_report);
         }

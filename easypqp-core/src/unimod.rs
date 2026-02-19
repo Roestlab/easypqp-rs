@@ -116,8 +116,6 @@ impl UnimodDb {
 
 /// Low-level XML parser that builds the `PtmMap` from raw XML bytes.
 fn parse_unimod_xml(xml_bytes: &[u8]) -> Result<PtmMap> {
-    let ns = b"umod:";
-
     let mut ptms: PtmMap = HashMap::new();
 
     // Pre-populate all known sites and positions so lookups never fail on missing keys.
@@ -157,7 +155,7 @@ fn parse_unimod_xml(xml_bytes: &[u8]) -> Result<PtmMap> {
                 let local_name = e.local_name();
                 let name = local_name.as_ref();
 
-                if name == b"mod" || name == strip_ns(e.name().as_ref(), ns) && strip_ns(e.name().as_ref(), ns) == b"mod" {
+                if name == b"mod" {
                     // <umod:mod ... record_id="1" ...>
                     // We detect <umod:mod> by checking the local name == "mod"
                     let mut rid: Option<i32> = None;
@@ -233,15 +231,6 @@ fn parse_unimod_xml(xml_bytes: &[u8]) -> Result<PtmMap> {
     Ok(ptms)
 }
 
-/// Helper: strip a namespace prefix from an element name.
-fn strip_ns<'a>(name: &'a [u8], ns: &[u8]) -> &'a [u8] {
-    if name.starts_with(ns) {
-        &name[ns.len()..]
-    } else {
-        name
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Public re-annotation API
 // ---------------------------------------------------------------------------
@@ -268,8 +257,6 @@ pub fn reannotate_modified_sequence(
     db: &UnimodDb,
     enable_unannotated: bool,
 ) -> Result<String> {
-    lazy_static_regex();
-
     let matches: Vec<MassBracketMatch> = find_mass_brackets(modified_peptide);
     if matches.is_empty() {
         return Ok(modified_peptide.to_string());
@@ -346,15 +333,9 @@ struct MassBracketMatch {
     is_nterm: bool,
 }
 
-/// Thread-local compiled regex for mass brackets.
-fn lazy_static_regex() {
-    // warm up the thread-local regex (no-op after first call)
-    MASS_BRACKET_RE.with(|_| {});
-}
-
 thread_local! {
     /// `[+57.0215]` or `[-18.0153]`, optionally followed by `-` for N-term.
-    static MASS_BRACKET_RE: Regex = Regex::new(r"\[([+-]?\d+\.?\d*)\](-)?").unwrap();
+    static MASS_BRACKET_RE: Regex = Regex::new(r"\[([+-]?\d+(?:\.\d+)?)\](-)?").unwrap();
     /// Strips annotation brackets/parens for counting amino acids.
     static STRIP_ANNOT_RE: Regex = Regex::new(r"\([^)]*\)|\[[^\]]*\]").unwrap();
 }
@@ -362,10 +343,6 @@ thread_local! {
 /// Find all mass-bracket matches in a modified peptide string.
 fn find_mass_brackets(s: &str) -> Vec<MassBracketMatch> {
     MASS_BRACKET_RE.with(|re| {
-        re.find_iter(s)
-            .map(|_| ()) // just to get count; re-search with captures below
-            .count(); // no-op
-
         re.captures_iter(s)
             .map(|cap| {
                 let full_match = cap.get(0).unwrap();
