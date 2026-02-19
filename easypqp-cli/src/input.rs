@@ -263,9 +263,9 @@ impl From<DLFeatureGenerators> for DLFeatureGeneratorSettings {
             log::info!("No model configurations provided. Will attempt to retrieve and use pretrained models.");
             let _ = redeem_properties::utils::peptdeep_utils::download_pretrained_models_exist();
             retention_time_model_config = DLModel {
-                model_path: "data/pretrained_models/pretrained_models/redeem/20251205_100_epochs_min_max_rt_cnn_tf.safetensors".to_string(),
+                model_path: "data/redeem_pretrained/20251205_100_epochs_min_max_rt_cnn_tf.safetensors".to_string(),
                 constants_path:
-                    "data/pretrained_models/pretrained_models/alphapeptdeep/generic/rt.pth.model_const.yaml"
+                    "data/peptdeep_generic_pretrained_models/generic/rt.pth.model_const.yaml"
                         .to_string(),
                 architecture: "rt_cnn_tf".to_string(),
             };
@@ -280,10 +280,10 @@ impl From<DLFeatureGenerators> for DLFeatureGeneratorSettings {
                 == "TIMSTOF".to_string()
             {
                 ion_mobility_model_config = DLModel {
-                    model_path: "data/pretrained_models/pretrained_models/redeem/20251205_500_epochs_early_stopped_100_min_max_ccs_cnn_tf.safetensors"
+                    model_path: "data/redeem_pretrained/20251205_500_epochs_early_stopped_100_min_max_ccs_cnn_tf.safetensors"
                         .to_string(),
                     constants_path:
-                        "data/pretrained_models/pretrained_models/alphapeptdeep/generic/ccs.pth.model_const.yaml"
+                        "data/peptdeep_generic_pretrained_models/generic/ccs.pth.model_const.yaml"
                             .to_string(),
                     architecture: "ccs_cnn_tf".to_string(),
                 };
@@ -291,9 +291,9 @@ impl From<DLFeatureGenerators> for DLFeatureGeneratorSettings {
             }
 
             ms2_intensity_model_config = DLModel {
-                model_path: "data/pretrained_models/pretrained_models/alphapeptdeep/generic/ms2.pth".to_string(),
+                model_path: "data/peptdeep_generic_pretrained_models/generic/ms2.pth".to_string(),
                 constants_path:
-                    "data/pretrained_models/pretrained_models/alphapeptdeep/generic/ms2.pth.model_const.yaml"
+                    "data/peptdeep_generic_pretrained_models/generic/ms2.pth.model_const.yaml"
                         .to_string(),
                 architecture: "ms2_bert".to_string(),
             };
@@ -395,13 +395,23 @@ struct DatabaseSchema {
 
 impl Input {
     /// Load parameters from a JSON file and validate them.
+    /// If no parameters file is provided, sensible defaults are used.
     pub fn from_arguments(matches: ArgMatches) -> Result<Self> {
-        let path = matches
-            .get_one::<String>("parameters")
-            .expect("required parameters");
-
-        let mut input = Input::load(path)
-            .with_context(|| format!("Failed to read parameters from `{path}`"))?;
+        let mut input = if let Some(path) = matches.get_one::<String>("parameters") {
+            Input::load(path)
+                .with_context(|| format!("Failed to read parameters from `{path}`"))?
+        } else {
+            // No config file provided — use defaults
+            Input {
+                database: Builder::default(),
+                insilico_settings: InsilicoPQPSettings::default(),
+                dl_feature_generators: None,
+                peptide_chunking: ChunkingStrategy::default(),
+                output_file: None,
+                write_report: None,
+                parquet_output: None,
+            }
+        };
 
         // Handle JSON configuration overrides
         if let Some(fasta) = matches.get_one::<String>("fasta") {
@@ -426,7 +436,7 @@ impl Input {
 
         ensure!(
             input.database.fasta.is_some(),
-            "`database.fasta` must be set. For more information try '--help'"
+            "`database.fasta` must be set via the config file or --fasta. For more information try '--help'"
         );
 
         Ok(input)
@@ -552,8 +562,8 @@ impl Input {
             insilico_settings: self.insilico_settings.clone(),
             dl_feature_generators: self
                 .dl_feature_generators
-                .map(Into::into)
-                .unwrap_or_default(),
+                .unwrap_or_default()
+                .into(),
             peptide_chunking: self.peptide_chunking.clone(),
             output_file,
             write_report: self.write_report.unwrap_or(true),
